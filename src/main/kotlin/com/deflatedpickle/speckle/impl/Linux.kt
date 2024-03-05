@@ -3,6 +3,7 @@ package com.deflatedpickle.speckle.impl
 import com.deflatedpickle.speckle.api.Platform
 import com.sun.jna.platform.linux.LibC
 import java.io.File
+import java.io.IOException
 
 internal object Linux : Platform {
     // https://wiki.archlinux.org/title/XDG_user_directories
@@ -76,14 +77,32 @@ internal object Linux : Platform {
 
     // todo: XDG_TEMPLATES_DIR not exposed
 
+    // 1. look for an environment variable
+    // 2. try to use xdg-user-dir
+    // 3. read from ~/.config/user-dirs.dirs
+    // 4. use a default value
     internal fun getLinuxFolderDefault(dir: String): String {
-        val env = LibC.INSTANCE.getenv(dir)
+        val env = System.getenv(dir)
         if (env.isNullOrEmpty()) {
+            try {
+                if (dir !in defaultDirs.keys) throw IOException()
+                val exec = Runtime.getRuntime().exec(
+                    arrayOf(
+                        "xdg-user-dir", dir
+                            .replace("XDG_", "")
+                            .replace("_DIR", "")
+                    )
+                )
+                exec.waitFor()
+                return exec.inputStream.bufferedReader().readLine()
+            } catch (_: IOException) {
+            }
+
             val entry = folders[dir]
-            if (entry.isNullOrEmpty()) {
-                return defaultDirs[dir]!!
+            return if (entry.isNullOrEmpty()) {
+                expandvars(defaultDirs[dir]!!)
             } else {
-                return entry
+                entry
             }
         } else {
             return env
